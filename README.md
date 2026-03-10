@@ -85,7 +85,7 @@ flowchart LR
      ./scripts/generate-jwt-secret.ps1
      ```
 3. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
-4. Set `MUSIC_LIBRARY_HOST_PATH` to your host music directory.
+4. Set `MUSIC_LIBRARY_HOST_PATH` to your host music directory (must be writable by the API container for web uploads).
 
 Example:
 
@@ -151,5 +151,6 @@ The Vite dev server proxies `/api` to `http://localhost:4000`.
 - Back up `/data/musicstream.db` regularly.
 
 See [docs/operations.md](docs/operations.md) for backups, updates, and troubleshooting.
+
 
 
