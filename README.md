@@ -13,10 +13,10 @@ It includes:
 
 ```mermaid
 flowchart LR
-  Browser[Web UI (React)] -->|/api| Nginx[Nginx Container]
-  Nginx --> API[Fastify API]
-  API --> DB[(SQLite in /data)]
-  API --> Library[(Mounted Music Library /music)]
+  Browser["Web UI (React)"] -->|"API calls"| Nginx["Nginx Container"]
+  Nginx --> API["Fastify API"]
+  API --> DB[("SQLite (/data)")]
+  API --> Library[("Mounted Music Library (/music)")]
 ```
 
 ### Key capabilities
@@ -142,3 +142,4 @@ The Vite dev server proxies `/api` to `http://localhost:4000`.
 - Back up `/data/musicstream.db` regularly.
 
 See [docs/operations.md](docs/operations.md) for backups, updates, and troubleshooting.
+
