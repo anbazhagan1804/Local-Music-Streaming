@@ -17,6 +17,14 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+function formatArtist(track: Track | null): string {
+  if (!track) {
+    return "Select a track to begin playback";
+  }
+
+  return track.artist || "Unknown Artist";
+}
+
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [user, setUser] = useState<User | null>(null);
@@ -49,6 +57,8 @@ export default function App() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const activePlaylist = useMemo(() => playlists.find((item) => item.id === activePlaylistId) || null, [playlists, activePlaylistId]);
+
   const streamUrl = useMemo(() => {
     if (!token || !currentTrack) {
       return "";
@@ -62,11 +72,7 @@ export default function App() {
   }
 
   async function loadSession(tkn: string): Promise<void> {
-    const [me, trackResult, playlistResult] = await Promise.all([
-      api.me(tkn),
-      api.getTracks(tkn, search),
-      api.getPlaylists(tkn)
-    ]);
+    const [me, trackResult, playlistResult] = await Promise.all([api.me(tkn), api.getTracks(tkn, search), api.getPlaylists(tkn)]);
 
     setUser(me.user);
     setTracks(trackResult.items);
@@ -304,7 +310,7 @@ export default function App() {
     if (files.length === 0) {
       setUploadMessage(null);
     } else {
-      setUploadMessage(`${files.length} file(s) selected`);
+      setUploadMessage(`${files.length} file(s) ready to upload`);
     }
   }
 
@@ -356,8 +362,9 @@ export default function App() {
     return (
       <main className="auth-shell">
         <section className="auth-card">
-          <h1>MusicStream</h1>
-          <p>Self-hosted music streaming for your home server.</p>
+          <div className="auth-brand">MusicStream</div>
+          <h1>Your library, anywhere at home.</h1>
+          <p>Stream, upload, and organize music from one self-hosted dashboard.</p>
 
           <div className="auth-toggle">
             <button
@@ -411,29 +418,40 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div>
+      <aside className="sidebar-shell">
+        <section className="glass-card brand-card">
           <h1>MusicStream</h1>
           <p>{user.email}</p>
-        </div>
-        <div className="toolbar">
-          <input
-            type="search"
-            placeholder="Search tracks, artists, albums"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <button type="button" onClick={() => void refreshTracks()} disabled={loading}>
-            Search
+          <button type="button" className="danger" onClick={logout}>
+            Logout
           </button>
-          <button type="button" onClick={() => void refreshTracks()} disabled={loading}>
-            Refresh
-          </button>
-          {user.role === "admin" ? (
-            <button type="button" onClick={() => void onScanLibrary()} disabled={loading || stats?.scanInProgress}>
-              {stats?.scanInProgress ? "Scanning..." : "Scan Library"}
-            </button>
-          ) : null}
+        </section>
+
+        <section className="glass-card stats-card">
+          <h2>Library Stats</h2>
+          <div className="stat-grid">
+            <article>
+              <strong>{stats?.tracks ?? 0}</strong>
+              <span>Tracks</span>
+            </article>
+            <article>
+              <strong>{stats?.artists ?? 0}</strong>
+              <span>Artists</span>
+            </article>
+            <article>
+              <strong>{stats?.albums ?? 0}</strong>
+              <span>Albums</span>
+            </article>
+            <article>
+              <strong>{stats?.latestScan?.status ?? "none"}</strong>
+              <span>Last Scan</span>
+            </article>
+          </div>
+        </section>
+
+        <section className="glass-card upload-card">
+          <h2>Upload Music</h2>
+          <p>Add tracks from this device (desktop or mobile).</p>
           <input
             ref={fileInputRef}
             className="file-input"
@@ -443,70 +461,19 @@ export default function App() {
             onChange={onFileSelection}
             title="Choose music files"
           />
-          <button type="button" onClick={() => void onUploadMusic()} disabled={uploading || selectedFiles.length === 0}>
-            {uploading ? "Uploading..." : `Upload${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ""}`}
-          </button>
-          <button type="button" className="danger" onClick={logout}>
-            Logout
-          </button>
-        </div>
-      </header>
-
-      {stats ? (
-        <section className="stats-grid">
-          <div>
-            <strong>{stats.tracks}</strong>
-            <span>Tracks</span>
-          </div>
-          <div>
-            <strong>{stats.artists}</strong>
-            <span>Artists</span>
-          </div>
-          <div>
-            <strong>{stats.albums}</strong>
-            <span>Albums</span>
-          </div>
-          <div>
-            <strong>{stats.latestScan?.status ?? "none"}</strong>
-            <span>Last Scan</span>
+          <div className="upload-actions">
+            <button type="button" onClick={() => void onUploadMusic()} disabled={uploading || selectedFiles.length === 0}>
+              {uploading ? "Uploading..." : `Upload${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ""}`}
+            </button>
+            {user.role === "admin" ? (
+              <button type="button" onClick={() => void onScanLibrary()} disabled={loading || stats?.scanInProgress}>
+                {stats?.scanInProgress ? "Scanning..." : "Scan Library"}
+              </button>
+            ) : null}
           </div>
         </section>
-      ) : null}
 
-      {scanMessage ? <p className="success">{scanMessage}</p> : null}
-      {uploadMessage ? <p className="success">{uploadMessage}</p> : null}
-      {error ? <p className="error">{error}</p> : null}
-
-      <section className="content-grid">
-        <section className="panel tracks-panel">
-          <h2>Library</h2>
-          <ul className="track-list">
-            {tracks.map((track) => (
-              <li key={track.id}>
-                <div className="track-meta">
-                  <strong>{track.title}</strong>
-                  <span>
-                    {track.artist || "Unknown Artist"} {track.album ? `• ${track.album}` : ""}
-                  </span>
-                </div>
-                <div className="track-actions">
-                  <span>{formatDuration(track.duration)}</span>
-                  <button type="button" onClick={() => setCurrentTrack(track)}>
-                    Play
-                  </button>
-                  <button type="button" onClick={() => void toggleFavorite(track)}>
-                    {track.is_favorite ? "Unfavorite" : "Favorite"}
-                  </button>
-                  <button type="button" onClick={() => void onAddTrackToActivePlaylist(track.id)} disabled={!activePlaylistId}>
-                    Add to Playlist
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="panel playlists-panel">
+        <section className="glass-card playlist-card">
           <h2>Playlists</h2>
           <form onSubmit={onCreatePlaylist} className="playlist-form">
             <input
@@ -522,8 +489,9 @@ export default function App() {
           <ul className="playlist-list">
             {playlists.map((playlist) => (
               <li key={playlist.id} className={playlist.id === activePlaylistId ? "active" : ""}>
-                <button type="button" onClick={() => setActivePlaylistId(playlist.id)}>
-                  {playlist.name} ({playlist.track_count ?? 0})
+                <button type="button" className="playlist-select" onClick={() => setActivePlaylistId(playlist.id)}>
+                  {playlist.name}
+                  <span>{playlist.track_count ?? 0}</span>
                 </button>
                 <button type="button" className="danger small" onClick={() => void onDeletePlaylist(playlist.id)}>
                   Delete
@@ -531,33 +499,109 @@ export default function App() {
               </li>
             ))}
           </ul>
-
-          <h3>Active Playlist Tracks</h3>
-          <ul className="playlist-track-list">
-            {activePlaylistTracks.map((track) => (
-              <li key={track.id}>
-                <span>{track.title}</span>
-                <div>
-                  <button type="button" onClick={() => setCurrentTrack(track)}>
-                    Play
-                  </button>
-                  <button type="button" className="danger small" onClick={() => void onRemoveTrackFromPlaylist(track.id)}>
-                    Remove
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
         </section>
-      </section>
+      </aside>
 
-      <footer className="player">
-        <div>
-          <strong>{currentTrack?.title || "Nothing playing"}</strong>
-          <span>{currentTrack?.artist || ""}</span>
-        </div>
-        <audio key={streamUrl} controls src={streamUrl} autoPlay />
-      </footer>
+      <section className="content-shell">
+        <section className="glass-card control-bar">
+          <form
+            className="search-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void refreshTracks();
+            }}
+          >
+            <input
+              type="search"
+              placeholder="Search tracks, artists, albums"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <button type="submit" disabled={loading}>
+              Search
+            </button>
+            <button type="button" onClick={() => void refreshTracks()} disabled={loading}>
+              Refresh
+            </button>
+          </form>
+        </section>
+
+        <section className="glass-card hero-card">
+          <div>
+            <p className="eyebrow">Now Playing</p>
+            <h2>{currentTrack?.title || "Pick a track from your library"}</h2>
+            <p>{formatArtist(currentTrack)}</p>
+          </div>
+          <div className="hero-chip">{currentTrack ? formatDuration(currentTrack.duration) : "--:--"}</div>
+        </section>
+
+        {scanMessage ? <p className="notice success">{scanMessage}</p> : null}
+        {uploadMessage ? <p className="notice success">{uploadMessage}</p> : null}
+        {error ? <p className="notice error">{error}</p> : null}
+
+        <section className="dual-panels">
+          <section className="glass-card library-card">
+            <header>
+              <h2>Library</h2>
+              <span>{tracks.length} tracks</span>
+            </header>
+            <ul className="track-list">
+              {tracks.map((track) => (
+                <li key={track.id}>
+                  <div className="track-meta">
+                    <strong>{track.title}</strong>
+                    <span>
+                      {track.artist || "Unknown Artist"} {track.album ? `- ${track.album}` : ""}
+                    </span>
+                  </div>
+                  <div className="track-actions">
+                    <span>{formatDuration(track.duration)}</span>
+                    <button type="button" onClick={() => setCurrentTrack(track)}>
+                      Play
+                    </button>
+                    <button type="button" onClick={() => void toggleFavorite(track)}>
+                      {track.is_favorite ? "Unfavorite" : "Favorite"}
+                    </button>
+                    <button type="button" onClick={() => void onAddTrackToActivePlaylist(track.id)} disabled={!activePlaylistId}>
+                      Add
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <section className="glass-card active-playlist-card">
+            <header>
+              <h2>{activePlaylist?.name || "Playlist"}</h2>
+              <span>{activePlaylistTracks.length} tracks</span>
+            </header>
+            <ul className="playlist-track-list">
+              {activePlaylistTracks.map((track) => (
+                <li key={track.id}>
+                  <span>{track.title}</span>
+                  <div>
+                    <button type="button" onClick={() => setCurrentTrack(track)}>
+                      Play
+                    </button>
+                    <button type="button" className="danger small" onClick={() => void onRemoveTrackFromPlaylist(track.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </section>
+
+        <footer className="glass-card player-bar">
+          <div>
+            <strong>{currentTrack?.title || "Nothing playing"}</strong>
+            <span>{currentTrack?.artist || "Select a track to start"}</span>
+          </div>
+          <audio key={streamUrl} controls src={streamUrl} autoPlay />
+        </footer>
+      </section>
     </main>
   );
 }
