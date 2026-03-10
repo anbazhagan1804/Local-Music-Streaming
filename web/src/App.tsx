@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, Playlist, Track, User } from "./lib/api";
 
 const TOKEN_KEY = "musicstream_token";
+const AUDIO_ACCEPT = ".mp3,.flac,.m4a,.aac,.ogg,.wav,.opus,audio/*";
 
 type AuthMode = "login" | "register";
 
@@ -40,8 +41,13 @@ export default function App() {
   } | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const streamUrl = useMemo(() => {
     if (!token || !currentTrack) {
@@ -50,18 +56,22 @@ export default function App() {
     return `${api.baseUrl}/tracks/${currentTrack.id}/stream?token=${encodeURIComponent(token)}`;
   }, [token, currentTrack]);
 
+  async function refreshStats(currentToken: string): Promise<void> {
+    const statsResult = await api.getStats(currentToken);
+    setStats(statsResult);
+  }
+
   async function loadSession(tkn: string): Promise<void> {
-    const [me, trackResult, playlistResult, statsResult] = await Promise.all([
+    const [me, trackResult, playlistResult] = await Promise.all([
       api.me(tkn),
       api.getTracks(tkn, search),
-      api.getPlaylists(tkn),
-      api.getStats(tkn)
+      api.getPlaylists(tkn)
     ]);
 
     setUser(me.user);
     setTracks(trackResult.items);
     setPlaylists(playlistResult.items);
-    setStats(statsResult);
+    await refreshStats(tkn);
 
     if (playlistResult.items.length > 0) {
       const firstId = playlistResult.items[0].id;
@@ -278,14 +288,52 @@ export default function App() {
     try {
       const scan = await api.scanLibrary(token);
       await refreshTracks();
-      const updatedStats = await api.getStats(token);
-      setStats(updatedStats);
+      await refreshStats(token);
       setScanMessage(
         `Scan complete: scanned ${scan.scanned}, added ${scan.added}, updated ${scan.updated}, removed ${scan.removed}, skipped ${scan.skipped}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Library scan failed");
       setScanMessage(null);
+    }
+  }
+
+  function onFileSelection(event: ChangeEvent<HTMLInputElement>): void {
+    const files = Array.from(event.target.files ?? []);
+    setSelectedFiles(files);
+    if (files.length === 0) {
+      setUploadMessage(null);
+    } else {
+      setUploadMessage(`${files.length} file(s) selected`);
+    }
+  }
+
+  async function onUploadMusic(): Promise<void> {
+    if (!token || selectedFiles.length === 0) {
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+    setUploadMessage("Uploading files...");
+
+    try {
+      const response = await api.uploadTracks(token, selectedFiles);
+      await refreshTracks();
+      await refreshStats(token);
+
+      const skippedInfo = response.skippedCount > 0 ? ` ${response.skippedCount} file(s) skipped.` : "";
+      setUploadMessage(`Uploaded ${response.uploadedCount} file(s). ${response.scan.message}${skippedInfo}`);
+
+      setSelectedFiles([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
+      setUploadMessage(null);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -298,8 +346,10 @@ export default function App() {
     setActivePlaylistTracks([]);
     setCurrentTrack(null);
     setStats(null);
+    setSelectedFiles([]);
     setError(null);
     setScanMessage(null);
+    setUploadMessage(null);
   }
 
   if (!token || !user) {
@@ -384,6 +434,18 @@ export default function App() {
               {stats?.scanInProgress ? "Scanning..." : "Scan Library"}
             </button>
           ) : null}
+          <input
+            ref={fileInputRef}
+            className="file-input"
+            type="file"
+            multiple
+            accept={AUDIO_ACCEPT}
+            onChange={onFileSelection}
+            title="Choose music files"
+          />
+          <button type="button" onClick={() => void onUploadMusic()} disabled={uploading || selectedFiles.length === 0}>
+            {uploading ? "Uploading..." : `Upload${selectedFiles.length > 0 ? ` (${selectedFiles.length})` : ""}`}
+          </button>
           <button type="button" className="danger" onClick={logout}>
             Logout
           </button>
@@ -412,6 +474,7 @@ export default function App() {
       ) : null}
 
       {scanMessage ? <p className="success">{scanMessage}</p> : null}
+      {uploadMessage ? <p className="success">{uploadMessage}</p> : null}
       {error ? <p className="error">{error}</p> : null}
 
       <section className="content-grid">

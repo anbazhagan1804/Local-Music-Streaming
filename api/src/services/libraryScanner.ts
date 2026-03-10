@@ -2,9 +2,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseFile } from "music-metadata";
 import { DbClient } from "../db";
+import { isSupportedAudioExtension } from "../utils/audioExtensions";
 import { normalizeRelativePath } from "../utils/pathSafety";
-
-const SUPPORTED_EXTENSIONS = new Set([".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav", ".opus"]);
 
 export type ScanResult = {
   scanned: number;
@@ -37,8 +36,7 @@ async function walkMusicFiles(root: string): Promise<string[]> {
         continue;
       }
 
-      const ext = path.extname(entry.name).toLowerCase();
-      if (SUPPORTED_EXTENSIONS.has(ext)) {
+      if (isSupportedAudioExtension(entry.name)) {
         files.push(fullPath);
       }
     }

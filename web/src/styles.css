@@ -56,6 +56,21 @@ input {
   color: #f6fbff;
 }
 
+input.file-input {
+  padding: 0.4rem;
+  max-width: 240px;
+}
+
+input.file-input::file-selector-button {
+  border: 1px solid #2f587f;
+  border-radius: 8px;
+  margin-right: 0.45rem;
+  padding: 0.35rem 0.55rem;
+  color: #eaf0f5;
+  background: #1b3650;
+  cursor: pointer;
+}
+
 .auth-shell {
   min-height: 100vh;
   display: grid;
@@ -139,7 +154,7 @@ input {
 }
 
 .toolbar input {
-  min-width: 260px;
+  min-width: 220px;
 }
 
 .stats-grid {
@@ -304,8 +319,12 @@ input {
   }
 
   .toolbar input {
-    min-width: 150px;
+    min-width: 140px;
     flex: 1;
+  }
+
+  .toolbar .file-input {
+    min-width: 220px;
   }
 
   .player {
@@ -313,3 +332,4 @@ input {
     align-items: stretch;
   }
 }
+

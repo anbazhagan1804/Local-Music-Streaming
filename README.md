@@ -26,6 +26,7 @@ flowchart LR
 - Recursive scan of a mounted music folder
 - Metadata extraction (`music-metadata`)
 - Byte-range audio streaming endpoint (`206 Partial Content`)
+- Browser upload flow for logged-in users (PC/mobile) with automatic post-upload scan
 - Favorites and per-user playlists
 - Home-server-friendly deployment with persistent data volume
 
@@ -90,7 +91,7 @@ Example:
 
 ```env
 JWT_SECRET=<paste-generated-secret>
-ADMIN_EMAIL=admin@local
+ADMIN_EMAIL=admin@local.com
 ADMIN_PASSWORD=<strong-password>
 MUSIC_LIBRARY_HOST_PATH=D:/Media/Music
 ```
@@ -112,6 +113,13 @@ docker compose up -d
 1. Log in with the admin credentials.
 2. Click **Scan Library** in the web UI.
 3. Wait for scan completion message.
+
+### 6. Upload from web UI (PC/mobile)
+
+1. Log in to the web UI.
+2. Use the file picker in the top toolbar and select one or more music files.
+3. Click **Upload**.
+4. Uploaded files are stored under `<MUSIC_DIR>/uploads` and scanned automatically.
 
 ## Local Development (without Docker)
 

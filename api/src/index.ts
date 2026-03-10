@@ -1,17 +1,18 @@
 import Fastify, { FastifyReply, FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
-import rateLimit from "@fastify/rate-limit";
 import jwt from "@fastify/jwt";
+import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import { config } from "./config";
 import { db } from "./db";
-import { ensureAdminUser } from "./services/bootstrapAdmin";
-import { healthRoutes } from "./routes/health";
 import { authRoutes } from "./routes/auth";
-import { trackRoutes } from "./routes/tracks";
 import { favoriteRoutes } from "./routes/favorites";
-import { playlistRoutes } from "./routes/playlists";
+import { healthRoutes } from "./routes/health";
 import { libraryRoutes } from "./routes/library";
+import { playlistRoutes } from "./routes/playlists";
+import { trackRoutes } from "./routes/tracks";
+import { ensureAdminUser } from "./services/bootstrapAdmin";
 
 async function buildServer() {
   const app = Fastify({ logger: true, trustProxy: true });
@@ -29,6 +30,13 @@ async function buildServer() {
   await app.register(rateLimit, {
     max: 200,
     timeWindow: "1 minute"
+  });
+
+  await app.register(multipart, {
+    limits: {
+      files: 50,
+      fileSize: 1024 * 1024 * 500
+    }
   });
 
   await app.register(jwt, {
@@ -61,14 +69,17 @@ async function buildServer() {
     }
   });
 
-  await app.register(async (api) => {
-    await healthRoutes(api);
-    await authRoutes(api);
-    await trackRoutes(api);
-    await favoriteRoutes(api);
-    await playlistRoutes(api);
-    await libraryRoutes(api);
-  }, { prefix: "/api" });
+  await app.register(
+    async (api) => {
+      await healthRoutes(api);
+      await authRoutes(api);
+      await trackRoutes(api);
+      await favoriteRoutes(api);
+      await playlistRoutes(api);
+      await libraryRoutes(api);
+    },
+    { prefix: "/api" }
+  );
 
   app.addHook("onClose", async () => {
     db.close();
