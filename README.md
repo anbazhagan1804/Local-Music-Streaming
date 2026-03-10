@@ -120,6 +120,7 @@ docker compose up -d
 2. Use the file picker in the top toolbar and select one or more music files.
 3. Click **Upload**.
 4. Uploaded files are stored under `<MUSIC_DIR>/uploads` and scanned automatically.
+5. Default upload limit is 500 MB per file (API limit).
 
 ## Local Development (without Docker)
 
@@ -150,4 +151,5 @@ The Vite dev server proxies `/api` to `http://localhost:4000`.
 - Back up `/data/musicstream.db` regularly.
 
 See [docs/operations.md](docs/operations.md) for backups, updates, and troubleshooting.
+
 
