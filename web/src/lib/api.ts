@@ -1,0 +1,127 @@
+export type User = {
+  id: number;
+  email: string;
+  role: "admin" | "user";
+};
+
+export type Track = {
+  id: number;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  duration: number | null;
+  track_number: number | null;
+  is_favorite?: number;
+};
+
+export type Playlist = {
+  id: number;
+  name: string;
+  created_at?: string;
+  track_count?: number;
+};
+
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {})
+    }
+  });
+
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const data = (await response.json()) as { error?: string };
+      if (data.error) {
+        message = data.error;
+      }
+    } catch {
+      // Keep fallback message.
+    }
+    throw new Error(message);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return (await response.json()) as T;
+}
+
+export const api = {
+  baseUrl: API_BASE,
+  login(email: string, password: string) {
+    return request<{ token: string; user: User }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+  },
+  register(email: string, password: string) {
+    return request<{ token: string; user: User }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+  },
+  me(token: string) {
+    return request<{ user: User }>("/auth/me", { method: "GET" }, token);
+  },
+  getTracks(token: string, search = "") {
+    const query = new URLSearchParams({ search, page: "1", limit: "200" });
+    return request<{ items: Track[] }>(`/tracks?${query.toString()}`, { method: "GET" }, token);
+  },
+  getStats(token: string) {
+    return request<{
+      tracks: number;
+      artists: number;
+      albums: number;
+      latestScan: {
+        started_at: string;
+        finished_at: string | null;
+        status: string;
+      } | null;
+      scanInProgress: boolean;
+    }>("/library/stats", { method: "GET" }, token);
+  },
+  scanLibrary(token: string) {
+    return request<{ scanned: number; added: number; updated: number; removed: number; skipped: number }>(
+      "/library/scan",
+      { method: "POST" },
+      token
+    );
+  },
+  addFavorite(token: string, trackId: number) {
+    return request<{ ok: boolean }>(`/favorites/${trackId}`, { method: "POST" }, token);
+  },
+  removeFavorite(token: string, trackId: number) {
+    return request<{ ok: boolean }>(`/favorites/${trackId}`, { method: "DELETE" }, token);
+  },
+  getPlaylists(token: string) {
+    return request<{ items: Playlist[] }>("/playlists", { method: "GET" }, token);
+  },
+  createPlaylist(token: string, name: string) {
+    return request<Playlist>("/playlists", {
+      method: "POST",
+      body: JSON.stringify({ name })
+    }, token);
+  },
+  deletePlaylist(token: string, playlistId: number) {
+    return request<{ ok: boolean }>(`/playlists/${playlistId}`, { method: "DELETE" }, token);
+  },
+  getPlaylistTracks(token: string, playlistId: number) {
+    return request<{ playlist: Playlist; items: Track[] }>(`/playlists/${playlistId}/tracks`, { method: "GET" }, token);
+  },
+  addTrackToPlaylist(token: string, playlistId: number, trackId: number) {
+    return request<{ ok: boolean }>(`/playlists/${playlistId}/tracks`, {
+      method: "POST",
+      body: JSON.stringify({ trackId })
+    }, token);
+  },
+  removeTrackFromPlaylist(token: string, playlistId: number, trackId: number) {
+    return request<{ ok: boolean }>(`/playlists/${playlistId}/tracks/${trackId}`, { method: "DELETE" }, token);
+  }
+};
