@@ -47,7 +47,8 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   }
 
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
-  if (!isFormData && !headers.has("Content-Type")) {
+  const hasBody = options.body !== undefined && options.body !== null;
+  if (!isFormData && hasBody && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
