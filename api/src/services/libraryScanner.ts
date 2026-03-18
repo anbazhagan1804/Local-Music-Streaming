@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseFile } from "music-metadata";
 import { DbClient } from "../db";
 import { registerFileFingerprint, removeFileFingerprint } from "./libraryFingerprints";
+import { deduplicateTracksByContentHash } from "./trackDeduplication";
 import { isSupportedAudioExtension } from "../utils/audioExtensions";
 import { hashFile } from "../utils/contentHash";
 import { normalizeRelativePath } from "../utils/pathSafety";
@@ -13,6 +14,7 @@ export type ScanResult = {
   updated: number;
   removed: number;
   skipped: number;
+  deduplicated: number;
   errors: Array<{ file: string; error: string }>;
 };
 
@@ -54,6 +56,7 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
     updated: 0,
     removed: 0,
     skipped: 0,
+    deduplicated: 0,
     errors: []
   };
 
@@ -163,6 +166,8 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
     removeFileFingerprint(db, stale.file_path);
     result.removed += 1;
   }
+
+  result.deduplicated = deduplicateTracksByContentHash(db, seenRelativePaths);
 
   return result;
 }

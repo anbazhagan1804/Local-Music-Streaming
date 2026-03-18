@@ -277,7 +277,9 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
           status: "completed",
           jobId: scan.jobId,
           result: scan.result,
-          message: `Upload complete and library scanned (${scan.result.added} added, ${scan.result.updated} updated).`
+          message:
+            `Upload complete and library scanned (${scan.result.added} added, ${scan.result.updated} updated` +
+            `${scan.result.deduplicated > 0 ? `, ${scan.result.deduplicated} duplicates merged` : ""}).`
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown scan error";

@@ -296,7 +296,8 @@ export default function App() {
       await refreshTracks();
       await refreshStats(token);
       setScanMessage(
-        `Scan complete: scanned ${scan.scanned}, added ${scan.added}, updated ${scan.updated}, removed ${scan.removed}, skipped ${scan.skipped}`
+        `Scan complete: scanned ${scan.scanned}, added ${scan.added}, updated ${scan.updated}, removed ${scan.removed}, skipped ${scan.skipped}` +
+          `${scan.deduplicated > 0 ? `, deduplicated ${scan.deduplicated}` : ""}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Library scan failed");

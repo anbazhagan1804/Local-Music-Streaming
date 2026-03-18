@@ -111,7 +111,7 @@ export const api = {
     }>("/library/stats", { method: "GET" }, token);
   },
   scanLibrary(token: string) {
-    return request<{ scanned: number; added: number; updated: number; removed: number; skipped: number }>(
+    return request<{ scanned: number; added: number; updated: number; removed: number; skipped: number; deduplicated: number }>(
       "/library/scan",
       { method: "POST" },
       token
