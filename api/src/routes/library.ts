@@ -1,5 +1,6 @@
 import { MultipartFile } from "@fastify/multipart";
 import { FastifyInstance } from "fastify";
+import { parseFile } from "music-metadata";
 import fs from "node:fs";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
@@ -8,6 +9,7 @@ import { config } from "../config";
 import { db } from "../db";
 import { findDuplicateLibraryFile, registerFileFingerprint, removeFileFingerprint } from "../services/libraryFingerprints";
 import { ScanResult, scanLibrary } from "../services/libraryScanner";
+import { buildTrackIdentityKey } from "../services/trackIdentity";
 import { isSupportedAudioExtension } from "../utils/audioExtensions";
 import { createHashingPassThrough } from "../utils/contentHash";
 
@@ -82,8 +84,12 @@ async function runLibraryScan(): Promise<{ jobId: number; result: ScanResult }> 
   }
 }
 
-async function findDuplicateTrack(contentHash: string, fileSize: number): Promise<{ file_path: string } | undefined> {
-  return findDuplicateLibraryFile(db, config.MUSIC_DIR, contentHash, fileSize);
+async function findDuplicateTrack(
+  contentHash: string,
+  fileSize: number,
+  identityKey?: string | null
+): Promise<{ file_path: string } | undefined> {
+  return findDuplicateLibraryFile(db, config.MUSIC_DIR, contentHash, fileSize, identityKey);
 }
 
 async function writeUploadedFile(file: MultipartFile, uploadRoot: string): Promise<{
@@ -105,7 +111,20 @@ async function writeUploadedFile(file: MultipartFile, uploadRoot: string): Promi
 
     const contentHash = hashingPassThrough.digest();
     const tempStat = await fsPromises.stat(tempPath);
-    const duplicateTrack = await findDuplicateTrack(contentHash, tempStat.size);
+    let identityKey: string | null = null;
+
+    try {
+      const metadata = await parseFile(tempPath, { duration: true, skipCovers: true });
+      identityKey = buildTrackIdentityKey({
+        title: metadata.common.title || path.basename(originalName, path.extname(originalName)),
+        artist: metadata.common.artist,
+        duration: metadata.format.duration || null
+      });
+    } catch {
+      identityKey = null;
+    }
+
+    const duplicateTrack = await findDuplicateTrack(contentHash, tempStat.size, identityKey);
 
     if (duplicateTrack) {
       await fsPromises.unlink(tempPath);

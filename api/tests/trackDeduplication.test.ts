@@ -82,4 +82,31 @@ describe("deduplicateTracksByContentHash", () => {
 
     db.close();
   });
+
+  it("merges tracks that look like the same song even when the file hash differs", () => {
+    const db = createTestDb();
+
+    const canonicalInsert = db
+      .prepare("INSERT INTO tracks (file_path, title, artist, duration, size, mtime, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run("uploads/a.mp3", "Whoopty", "CJ", 129, 100, 1, "hash-a");
+    const duplicateInsert = db
+      .prepare("INSERT INTO tracks (file_path, title, artist, duration, size, mtime, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run("uploads/b.mp3", "WHOOPTY", "C.J.", 129.4, 101, 2, "hash-b");
+    const duplicateTrackId = Number(duplicateInsert.lastInsertRowid);
+    const canonicalTrackId = Number(canonicalInsert.lastInsertRowid);
+
+    db.prepare("INSERT INTO favorites (user_id, track_id) VALUES (?, ?)").run(2, duplicateTrackId);
+
+    const deduplicated = deduplicateTracksByContentHash(db as never, new Set(["uploads/a.mp3", "uploads/b.mp3"]));
+
+    expect(deduplicated).toBe(1);
+
+    const tracks = db.prepare("SELECT id, file_path FROM tracks ORDER BY id ASC").all() as Array<{ id: number; file_path: string }>;
+    expect(tracks).toEqual([{ id: canonicalTrackId, file_path: "uploads/a.mp3" }]);
+
+    const favorite = db.prepare("SELECT user_id, track_id FROM favorites").get() as { user_id: number; track_id: number };
+    expect(favorite).toEqual({ user_id: 2, track_id: canonicalTrackId });
+
+    db.close();
+  });
 });

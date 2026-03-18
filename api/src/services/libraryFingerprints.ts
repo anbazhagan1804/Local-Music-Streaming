@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { DbClient } from "../db";
 import { hashFile } from "../utils/contentHash";
+import { buildTrackIdentityKey } from "./trackIdentity";
 
 type FileFingerprintRow = {
   file_path: string;
@@ -46,7 +47,8 @@ export async function findDuplicateLibraryFile(
   db: DbClient,
   musicDir: string,
   contentHash: string,
-  fileSize: number
+  fileSize: number,
+  identityKey?: string | null
 ): Promise<{ file_path: string } | undefined> {
   const fingerprintRows = db
     .prepare("SELECT file_path, size FROM file_fingerprints WHERE content_hash = ? ORDER BY updated_at DESC")
@@ -131,6 +133,29 @@ export async function findDuplicateLibraryFile(
         if (existingHash === contentHash) {
           return { file_path: relativePath };
         }
+      }
+    }
+  }
+
+  if (identityKey) {
+    const candidateRows = db
+      .prepare("SELECT file_path, title, artist, duration FROM tracks")
+      .all() as Array<{ file_path: string; title: string | null; artist: string | null; duration: number | null }>;
+
+    for (const row of candidateRows) {
+      const rowIdentityKey = buildTrackIdentityKey({
+        title: row.title,
+        artist: row.artist,
+        duration: row.duration
+      });
+
+      if (rowIdentityKey !== identityKey) {
+        continue;
+      }
+
+      const absolutePath = toAbsoluteMusicPath(musicDir, row.file_path);
+      if (await pathExists(absolutePath)) {
+        return { file_path: row.file_path };
       }
     }
   }

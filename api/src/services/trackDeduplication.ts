@@ -1,9 +1,13 @@
 import { DbClient } from "../db";
+import { buildTrackIdentityKey } from "./trackIdentity";
 
 type TrackHashRow = {
   id: number;
   file_path: string;
   content_hash: string;
+  title?: string | null;
+  artist?: string | null;
+  duration?: number | null;
 };
 
 type PlaylistTrackRow = {
@@ -18,6 +22,8 @@ function pickCanonicalTrack(rows: TrackHashRow[], activeRelativePaths: Set<strin
 }
 
 export function deduplicateTracksByContentHash(db: DbClient, activeRelativePaths: Set<string>): number {
+  let deduplicated = 0;
+
   const duplicateHashes = db
     .prepare(
       `
@@ -29,10 +35,6 @@ export function deduplicateTracksByContentHash(db: DbClient, activeRelativePaths
       `
     )
     .all() as Array<{ content_hash: string }>;
-
-  if (duplicateHashes.length === 0) {
-    return 0;
-  }
 
   const getTracksByHash = db.prepare(
     `
@@ -81,10 +83,51 @@ export function deduplicateTracksByContentHash(db: DbClient, activeRelativePaths
     deleteTrack.run(duplicateId);
   });
 
-  let deduplicated = 0;
-
   for (const hashRow of duplicateHashes) {
     const rows = getTracksByHash.all(hashRow.content_hash) as TrackHashRow[];
+    if (rows.length < 2) {
+      continue;
+    }
+
+    const canonical = pickCanonicalTrack(rows, activeRelativePaths);
+    for (const row of rows) {
+      if (row.id === canonical.id) {
+        continue;
+      }
+
+      mergeTrack(canonical.id, row.id);
+      deduplicated += 1;
+    }
+  }
+
+  const identityRows = db
+    .prepare(
+      `
+        SELECT id, file_path, content_hash, title, artist, duration
+        FROM tracks
+        ORDER BY id ASC
+      `
+    )
+    .all() as TrackHashRow[];
+
+  const rowsByIdentity = new Map<string, TrackHashRow[]>();
+  for (const row of identityRows) {
+    const identityKey = buildTrackIdentityKey({
+      title: row.title,
+      artist: row.artist,
+      duration: row.duration
+    });
+
+    if (!identityKey) {
+      continue;
+    }
+
+    const bucket = rowsByIdentity.get(identityKey) || [];
+    bucket.push(row);
+    rowsByIdentity.set(identityKey, bucket);
+  }
+
+  for (const rows of rowsByIdentity.values()) {
     if (rows.length < 2) {
       continue;
     }
