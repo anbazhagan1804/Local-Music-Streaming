@@ -8,6 +8,7 @@ import { config } from "../config";
 import { db } from "../db";
 import { ScanResult, scanLibrary } from "../services/libraryScanner";
 import { isSupportedAudioExtension } from "../utils/audioExtensions";
+import { createHashingPassThrough, hashFile } from "../utils/contentHash";
 
 let scanInProgress = false;
 
@@ -80,27 +81,76 @@ async function runLibraryScan(): Promise<{ jobId: number; result: ScanResult }> 
   }
 }
 
+async function findDuplicateTrack(contentHash: string, fileSize: number): Promise<{ file_path: string } | undefined> {
+  const knownDuplicate = db
+    .prepare("SELECT file_path FROM tracks WHERE content_hash = ? LIMIT 1")
+    .get(contentHash) as { file_path: string } | undefined;
+
+  if (knownDuplicate) {
+    return knownDuplicate;
+  }
+
+  const tracksNeedingHashes = db
+    .prepare("SELECT file_path FROM tracks WHERE size = ? AND (content_hash IS NULL OR content_hash = '')")
+    .all(fileSize) as Array<{ file_path: string }>;
+
+  const updateTrackHash = db.prepare("UPDATE tracks SET content_hash = ? WHERE file_path = ?");
+  for (const track of tracksNeedingHashes) {
+    const absolutePath = path.join(config.MUSIC_DIR, track.file_path.split("/").join(path.sep));
+
+    try {
+      const existingHash = await hashFile(absolutePath);
+      updateTrackHash.run(existingHash, track.file_path);
+
+      if (existingHash === contentHash) {
+        return track;
+      }
+    } catch {
+      // Ignore missing or unreadable files; the next scan will reconcile stale rows.
+    }
+  }
+
+  return undefined;
+}
+
 async function writeUploadedFile(file: MultipartFile, uploadRoot: string): Promise<{
   originalName: string;
   storedPath: string;
   bytes: number;
+  contentHash: string;
 }> {
   const originalName = file.filename || "unnamed-file";
   const safeName = sanitizeFilename(originalName);
-  const destinationPath = await allocateAvailablePath(uploadRoot, safeName);
+  const tempRoot = path.join(uploadRoot, ".incoming");
+  const tempPath = path.join(tempRoot, `${Date.now()}-${Math.random().toString(16).slice(2)}.part`);
+
+  await fsPromises.mkdir(tempRoot, { recursive: true });
 
   try {
-    await pipeline(file.file, fs.createWriteStream(destinationPath, { flags: "wx" }));
-    const stat = await fsPromises.stat(destinationPath);
+    const hashingPassThrough = createHashingPassThrough();
+    await pipeline(file.file, hashingPassThrough.stream, fs.createWriteStream(tempPath, { flags: "wx" }));
 
+    const contentHash = hashingPassThrough.digest();
+    const tempStat = await fsPromises.stat(tempPath);
+    const duplicateTrack = await findDuplicateTrack(contentHash, tempStat.size);
+
+    if (duplicateTrack) {
+      await fsPromises.unlink(tempPath);
+      throw new Error(`Duplicate content already exists at ${duplicateTrack.file_path}`);
+    }
+
+    const destinationPath = await allocateAvailablePath(uploadRoot, safeName);
+    await fsPromises.rename(tempPath, destinationPath);
+    const stat = await fsPromises.stat(destinationPath);
     return {
       originalName,
       storedPath: normalizePathForDb(path.relative(config.MUSIC_DIR, destinationPath)),
-      bytes: stat.size
+      bytes: stat.size,
+      contentHash
     };
   } catch (error) {
     try {
-      await fsPromises.unlink(destinationPath);
+      await fsPromises.unlink(tempPath);
     } catch {
       // Best effort cleanup.
     }
@@ -171,6 +221,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
 
     const uploaded: Array<{ originalName: string; storedPath: string; bytes: number }> = [];
     const skipped: Array<{ name: string; reason: string }> = [];
+    const batchContentHashes = new Set<string>();
 
     try {
       for await (const file of request.files()) {
@@ -187,6 +238,16 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
 
         try {
           const saved = await writeUploadedFile(file, uploadRoot);
+          if (batchContentHashes.has(saved.contentHash)) {
+            await fsPromises.unlink(path.join(config.MUSIC_DIR, saved.storedPath));
+            skipped.push({
+              name: originalName,
+              reason: "Duplicate content detected in the same upload batch"
+            });
+            continue;
+          }
+
+          batchContentHashes.add(saved.contentHash);
           uploaded.push(saved);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Unknown upload error";

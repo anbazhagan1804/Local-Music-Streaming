@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseFile } from "music-metadata";
 import { DbClient } from "../db";
 import { isSupportedAudioExtension } from "../utils/audioExtensions";
+import { hashFile } from "../utils/contentHash";
 import { normalizeRelativePath } from "../utils/pathSafety";
 
 export type ScanResult = {
@@ -58,14 +59,14 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
   const files = await walkMusicFiles(musicDir);
   const seenRelativePaths = new Set<string>();
 
-  const getTrackByPath = db.prepare("SELECT id, mtime, size FROM tracks WHERE file_path = ?");
+  const getTrackByPath = db.prepare("SELECT id, mtime, size, content_hash FROM tracks WHERE file_path = ?");
   const insertTrack = db.prepare(`
     INSERT INTO tracks (
       file_path, title, artist, album, album_artist, genre, year, duration,
-      track_number, disc_number, format, bitrate, sample_rate, size, mtime, updated_at
+      track_number, disc_number, format, bitrate, sample_rate, size, mtime, content_hash, updated_at
     ) VALUES (
       @file_path, @title, @artist, @album, @album_artist, @genre, @year, @duration,
-      @track_number, @disc_number, @format, @bitrate, @sample_rate, @size, @mtime, CURRENT_TIMESTAMP
+      @track_number, @disc_number, @format, @bitrate, @sample_rate, @size, @mtime, @content_hash, CURRENT_TIMESTAMP
     )
   `);
   const updateTrack = db.prepare(`
@@ -84,6 +85,7 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
         sample_rate = @sample_rate,
         size = @size,
         mtime = @mtime,
+        content_hash = @content_hash,
         updated_at = CURRENT_TIMESTAMP
     WHERE file_path = @file_path
   `);
@@ -95,9 +97,11 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
 
     try {
       const stats = await fs.stat(absolutePath);
-      const existing = getTrackByPath.get(relativePath) as { id: number; mtime: number; size: number } | undefined;
+      const existing = getTrackByPath.get(relativePath) as
+        | { id: number; mtime: number; size: number; content_hash: string | null }
+        | undefined;
 
-      if (existing && existing.mtime === Math.floor(stats.mtimeMs) && existing.size === stats.size) {
+      if (existing && existing.mtime === Math.floor(stats.mtimeMs) && existing.size === stats.size && existing.content_hash) {
         result.skipped += 1;
         continue;
       }
@@ -112,6 +116,7 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
       const common = metadata?.common;
       const format = metadata?.format;
       const titleFallback = path.basename(absolutePath, path.extname(absolutePath));
+      const contentHash = await hashFile(absolutePath);
 
       const payload = {
         file_path: relativePath,
@@ -128,7 +133,8 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
         bitrate: format?.bitrate || null,
         sample_rate: format?.sampleRate || null,
         size: stats.size,
-        mtime: Math.floor(stats.mtimeMs)
+        mtime: Math.floor(stats.mtimeMs),
+        content_hash: contentHash
       };
 
       if (existing) {

@@ -87,4 +87,11 @@ CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
 `);
 
+const trackColumns = db.prepare("PRAGMA table_info(tracks)").all() as Array<{ name: string }>;
+if (!trackColumns.some((column) => column.name === "content_hash")) {
+  db.exec("ALTER TABLE tracks ADD COLUMN content_hash TEXT");
+}
+
+db.exec("CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash)");
+
 export type DbClient = typeof db;

@@ -34,7 +34,7 @@ async function buildServer() {
 
   await app.register(multipart, {
     limits: {
-      files: 50,
+      files: 200,
       fileSize: 1024 * 1024 * 500
     }
   });
