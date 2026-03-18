@@ -328,7 +328,14 @@ export default function App() {
       await refreshTracks();
       await refreshStats(token);
 
-      const skippedInfo = response.skippedCount > 0 ? ` ${response.skippedCount} file(s) skipped.` : "";
+      const skippedPreview = response.skipped
+        .slice(0, 3)
+        .map((item) => `${item.name}: ${item.reason}`)
+        .join(" | ");
+      const skippedInfo =
+        response.skippedCount > 0
+          ? ` ${response.skippedCount} file(s) skipped${skippedPreview ? `: ${skippedPreview}` : "."}`
+          : "";
       setUploadMessage(`Uploaded ${response.uploadedCount} file(s). ${response.scan.message}${skippedInfo}`);
 
       setSelectedFiles([]);

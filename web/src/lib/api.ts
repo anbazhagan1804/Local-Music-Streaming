@@ -33,7 +33,7 @@ export type UploadResult = {
         message: string;
       }
     | {
-        status: "deferred" | "failed";
+        status: "deferred" | "failed" | "skipped";
         message: string;
       };
 };

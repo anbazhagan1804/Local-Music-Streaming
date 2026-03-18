@@ -80,11 +80,20 @@ CREATE TABLE IF NOT EXISTS scan_jobs (
   error_message TEXT
 );
 
+CREATE TABLE IF NOT EXISTS file_fingerprints (
+  file_path TEXT PRIMARY KEY,
+  content_hash TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title);
 CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
 CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
 CREATE INDEX IF NOT EXISTS idx_favorites_user ON favorites(user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user ON playlists(user_id);
+CREATE INDEX IF NOT EXISTS idx_file_fingerprints_hash ON file_fingerprints(content_hash);
 `);
 
 const trackColumns = db.prepare("PRAGMA table_info(tracks)").all() as Array<{ name: string }>;

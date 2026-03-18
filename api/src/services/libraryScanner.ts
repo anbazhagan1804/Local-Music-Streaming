@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseFile } from "music-metadata";
 import { DbClient } from "../db";
+import { registerFileFingerprint, removeFileFingerprint } from "./libraryFingerprints";
 import { isSupportedAudioExtension } from "../utils/audioExtensions";
 import { hashFile } from "../utils/contentHash";
 import { normalizeRelativePath } from "../utils/pathSafety";
@@ -102,6 +103,7 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
         | undefined;
 
       if (existing && existing.mtime === Math.floor(stats.mtimeMs) && existing.size === stats.size && existing.content_hash) {
+        registerFileFingerprint(db, relativePath, existing.content_hash, stats.size);
         result.skipped += 1;
         continue;
       }
@@ -144,6 +146,8 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
         insertTrack.run(payload);
         result.added += 1;
       }
+
+      registerFileFingerprint(db, relativePath, contentHash, stats.size);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown scanner error";
       result.errors.push({ file: relativePath, error: message });
@@ -156,6 +160,7 @@ export async function scanLibrary(db: DbClient, musicDir: string): Promise<ScanR
   const deleteTrack = db.prepare("DELETE FROM tracks WHERE file_path = ?");
   for (const stale of stalePaths) {
     deleteTrack.run(stale.file_path);
+    removeFileFingerprint(db, stale.file_path);
     result.removed += 1;
   }
 

@@ -6,9 +6,10 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { config } from "../config";
 import { db } from "../db";
+import { findDuplicateLibraryFile, registerFileFingerprint, removeFileFingerprint } from "../services/libraryFingerprints";
 import { ScanResult, scanLibrary } from "../services/libraryScanner";
 import { isSupportedAudioExtension } from "../utils/audioExtensions";
-import { createHashingPassThrough, hashFile } from "../utils/contentHash";
+import { createHashingPassThrough } from "../utils/contentHash";
 
 let scanInProgress = false;
 
@@ -82,35 +83,7 @@ async function runLibraryScan(): Promise<{ jobId: number; result: ScanResult }> 
 }
 
 async function findDuplicateTrack(contentHash: string, fileSize: number): Promise<{ file_path: string } | undefined> {
-  const knownDuplicate = db
-    .prepare("SELECT file_path FROM tracks WHERE content_hash = ? LIMIT 1")
-    .get(contentHash) as { file_path: string } | undefined;
-
-  if (knownDuplicate) {
-    return knownDuplicate;
-  }
-
-  const tracksNeedingHashes = db
-    .prepare("SELECT file_path FROM tracks WHERE size = ? AND (content_hash IS NULL OR content_hash = '')")
-    .all(fileSize) as Array<{ file_path: string }>;
-
-  const updateTrackHash = db.prepare("UPDATE tracks SET content_hash = ? WHERE file_path = ?");
-  for (const track of tracksNeedingHashes) {
-    const absolutePath = path.join(config.MUSIC_DIR, track.file_path.split("/").join(path.sep));
-
-    try {
-      const existingHash = await hashFile(absolutePath);
-      updateTrackHash.run(existingHash, track.file_path);
-
-      if (existingHash === contentHash) {
-        return track;
-      }
-    } catch {
-      // Ignore missing or unreadable files; the next scan will reconcile stale rows.
-    }
-  }
-
-  return undefined;
+  return findDuplicateLibraryFile(db, config.MUSIC_DIR, contentHash, fileSize);
 }
 
 async function writeUploadedFile(file: MultipartFile, uploadRoot: string): Promise<{
@@ -142,9 +115,12 @@ async function writeUploadedFile(file: MultipartFile, uploadRoot: string): Promi
     const destinationPath = await allocateAvailablePath(uploadRoot, safeName);
     await fsPromises.rename(tempPath, destinationPath);
     const stat = await fsPromises.stat(destinationPath);
+    const storedPath = normalizePathForDb(path.relative(config.MUSIC_DIR, destinationPath));
+    registerFileFingerprint(db, storedPath, contentHash, stat.size);
+
     return {
       originalName,
-      storedPath: normalizePathForDb(path.relative(config.MUSIC_DIR, destinationPath)),
+      storedPath,
       bytes: stat.size,
       contentHash
     };
@@ -240,6 +216,7 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
           const saved = await writeUploadedFile(file, uploadRoot);
           if (batchContentHashes.has(saved.contentHash)) {
             await fsPromises.unlink(path.join(config.MUSIC_DIR, saved.storedPath));
+            removeFileFingerprint(db, saved.storedPath);
             skipped.push({
               name: originalName,
               reason: "Duplicate content detected in the same upload batch"
@@ -260,7 +237,20 @@ export async function libraryRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (uploaded.length === 0) {
-      return reply.code(400).send({ error: "No supported files were uploaded", skipped });
+      if (skipped.length === 0) {
+        return reply.code(400).send({ error: "No files were received in the upload request" });
+      }
+
+      return reply.code(200).send({
+        uploadedCount: 0,
+        uploaded,
+        skippedCount: skipped.length,
+        skipped,
+        scan: {
+          status: "skipped",
+          message: "All selected files were skipped. Review the skipped list for duplicate or format details."
+        }
+      });
     }
 
     let scanResponse:
